@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DdlMappings">
+    <mapping uuid="e50264a3-3a32-4d41-907a-b081b51430ff" name="@localhost Mapping">
+      <data-sources db="0c49b692-22f6-4bb5-b577-e53748ee326d" />
+      <scope>
+        <node kind="schema" qname="spotifyplaylist" />
+      </scope>
+    </mapping>
+  </component>
+</project>
