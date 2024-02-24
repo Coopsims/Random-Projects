@@ -1,0 +1,23 @@
+algorithm,accuracy,precision,recall,f1_score,AUPRC
+tracks.csv KNN-Regressor Training,0.673738,0.667875,0.66385,0.664932,0.702434
+tracks.csv KNN-Regressor Testing,0.661635,0.655175,0.651622,0.652563,0.690756
+tracks.csv KNN-Classifier Training,0.668692,0.663022,0.655972,0.657129,0.69448
+tracks.csv KNN-Classifier Testing,0.659795,0.65342,0.646967,0.647979,0.685456
+tracks.csv Neural Network Training,0.574329,0.688848,0.615751,0.545443,0.73811
+tracks.csv Neural Network Testing,0.573588,0.688375,0.615385,0.544724,0.737689
+tracks.csv Decision Tree Classifier Training,0.995174,0.995653,0.994566,0.995091,0.996722
+tracks.csv Decision Tree Classifier Testing,0.627281,0.621238,0.621276,0.621257,0.666515
+tracks.csv Random Forest Classifier Training,0.995174,0.995139,0.995054,0.995096,0.995768
+tracks.csv Random Forest Classifier Testing,0.710692,0.706613,0.700297,0.702002,0.736288
+dataset.csv KNN-Regressor Training,0.992522,0.992516,0.992398,0.992457,0.994869
+dataset.csv KNN-Regressor Testing,0.713289,0.711061,0.711533,0.711265,0.808801
+dataset.csv KNN-Classifier Training,0.992522,0.992516,0.992398,0.992457,0.994869
+dataset.csv KNN-Classifier Testing,0.713289,0.711061,0.711533,0.711265,0.808801
+dataset.csv SVM Training,0.682785,0.697787,0.664974,0.660873,0.798575
+dataset.csv SVM Testing,0.664386,0.675255,0.647097,0.642045,0.787612
+dataset.csv Neural Network Training,0.561612,0.711528,0.517489,0.394564,0.776383
+dataset.csv Neural Network Testing,0.558816,0.697406,0.515571,0.390751,0.77521
+dataset.csv Decision Tree Classifier Training,0.994156,0.993669,0.994613,0.994111,0.997472
+dataset.csv Decision Tree Classifier Testing,0.771623,0.769896,0.77117,0.770342,0.848671
+dataset.csv Random Forest Classifier Training,0.994156,0.993936,0.994286,0.994107,0.99659
+dataset.csv Random Forest Classifier Testing,0.824781,0.828386,0.818612,0.821163,0.879184
