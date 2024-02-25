@@ -1,5 +1,23 @@
 algorithm,accuracy,precision,recall,f1_score,AUPRC
-tracks.csv Random Forest Classifier Training,0.99883,0.996121,0.94813,0.97088,0.945394
-tracks.csv Random Forest Classifier Testing,0.988887,0.606444,0.51557,0.525425,0.132562
-dataset.csv Random Forest Classifier Training,0.996667,0.994351,0.964852,0.979104,0.962443
-dataset.csv Random Forest Classifier Testing,0.971535,0.912711,0.681105,0.748134,0.621272
+tracks.csv KNN-Regressor Training,0.998705,0.970705,0.967728,0.969212,0.939429
+tracks.csv KNN-Regressor Testing,0.979503,0.53068,0.535426,0.532851,0.081191
+tracks.csv KNN-Classifier Training,0.998705,0.970705,0.967728,0.969212,0.939429
+tracks.csv KNN-Classifier Testing,0.979503,0.53068,0.535426,0.532851,0.081191
+tracks.csv Neural Network Training,0.958056,0.53588,0.621825,0.551245,0.18286
+tracks.csv Neural Network Testing,0.958538,0.530478,0.604364,0.543139,0.159789
+tracks.csv Decision Tree Classifier Training,0.99883,0.997316,0.947043,0.970813,0.945515
+tracks.csv Decision Tree Classifier Testing,0.978668,0.527463,0.533775,0.530227,0.07676
+tracks.csv Random Forest Classifier Training,0.99883,0.996013,0.948229,0.970886,0.945384
+tracks.csv Random Forest Classifier Testing,0.988887,0.604838,0.51516,0.524741,0.13055
+dataset.csv KNN-Regressor Training,0.99545,0.969386,0.975677,0.972509,0.948428
+dataset.csv KNN-Regressor Testing,0.938553,0.609717,0.611863,0.610777,0.268776
+dataset.csv KNN-Classifier Training,0.99545,0.969386,0.975677,0.972509,0.948428
+dataset.csv KNN-Classifier Testing,0.938553,0.609717,0.611863,0.610777,0.268776
+dataset.csv SVM Training,0.95705,0.478525,0.5,0.489027,0.521475
+dataset.csv SVM Testing,0.959254,0.479627,0.5,0.489602,0.520373
+dataset.csv Neural Network Training,0.935329,0.543395,0.529861,0.534642,0.126373
+dataset.csv Neural Network Testing,0.938114,0.537546,0.525571,0.529701,0.11392
+dataset.csv Decision Tree Classifier Training,0.996667,0.997999,0.961439,0.978956,0.962829
+dataset.csv Decision Tree Classifier Testing,0.944298,0.657932,0.681854,0.668883,0.38121
+dataset.csv Random Forest Classifier Training,0.996667,0.994608,0.964609,0.979094,0.962466
+dataset.csv Random Forest Classifier Testing,0.971842,0.915869,0.683842,0.751396,0.626902
