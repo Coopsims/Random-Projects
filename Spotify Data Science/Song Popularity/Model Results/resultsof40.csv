@@ -1,0 +1,5 @@
+algorithm,accuracy,precision,recall,f1_score,AUPRC
+tracks.csv Random Forest Classifier Training,0.994803,0.994777,0.991428,0.993088,0.991611
+tracks.csv Random Forest Classifier Testing,0.788716,0.73092,0.634759,0.653062,0.574533
+dataset.csv Random Forest Classifier Training,0.993662,0.993916,0.992987,0.993445,0.994469
+dataset.csv Random Forest Classifier Testing,0.813553,0.810551,0.799262,0.803524,0.817366
