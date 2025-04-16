@@ -81,8 +81,8 @@ class BuildModel:
         # Check for CUDA first, then MPS (Apple Silicon), then fall back to CPU
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
-        # elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        #     self.device = torch.device("mps")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
         else:
             self.device = torch.device("cpu")
         print(f"Using device: {self.device}")
@@ -143,10 +143,10 @@ class BuildModel:
 
         # Create data loaders
         self.train_loader = DataLoader(
-            train_dataset, batch_size=64, shuffle=True
+            train_dataset, batch_size=1024, shuffle=True
         )
         self.test_loader = DataLoader(
-            test_dataset, batch_size=64, shuffle=False
+            test_dataset, batch_size=1024, shuffle=False
         )
 
         print(f"Training samples: {len(train_dataset)}")

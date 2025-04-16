@@ -12,7 +12,6 @@ from tqdm import tqdm
 import seaborn as sns
 import pandas as pd
 import numpy as np
-import datetime
 import time
 
 # all tensorflow dependencies
