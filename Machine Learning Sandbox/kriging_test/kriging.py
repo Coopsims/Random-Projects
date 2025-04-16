@@ -534,6 +534,12 @@ def main(args=None):
     print("Performing interpolation...")
     grid_temp = griddata(points, temperatures, (grid_lon, grid_lat), method='cubic')
 
+    # Fill NaN values in grid_temp with the mean of non-NaN values
+    if np.any(np.isnan(grid_temp)):
+        print("Warning: NaN values detected in griddata results. Filling with mean value.")
+        non_nan_mean = np.nanmean(grid_temp)
+        grid_temp = np.nan_to_num(grid_temp, nan=non_nan_mean)
+
     # Perform interpolation based on the selected mode
     if args.mode == 'idw':
         print(f"Performing Inverse Distance Weighting (IDW) interpolation (power={args.idw_power})...")
@@ -560,6 +566,12 @@ def main(args=None):
         elif args.mode == 'cpu':
             # CPU mode uses single-core processing
             interpolated_temps = ordinary_kriging(points, temperatures, grid_points, variogram_params)
+
+        # Fill NaN values with the mean of non-NaN values to ensure complete coverage
+        if np.any(np.isnan(interpolated_temps)):
+            print(f"Warning: NaN values detected in interpolation results. Filling with mean value.")
+            non_nan_mean = np.nanmean(interpolated_temps)
+            interpolated_temps = np.nan_to_num(interpolated_temps, nan=non_nan_mean)
 
         interpolated_temps = interpolated_temps.reshape(grid_lon.shape)
         use_interpolation = True
