@@ -634,7 +634,7 @@ if __name__ == "__main__":
     # Run comparison with default methods
     # You can specify which methods to run by passing a list to the methods parameter
     # Available methods: 'ordinary_kriging', 'universal_kriging', 'regression_kriging', 'indicator_kriging', 'rbf', 'idw'
-    results = run_kriging_comparison(n_points=100, grid_size=100)
+    results = run_kriging_comparison(n_points=100, grid_size=200)
 
     print("\nComparison completed!")
 
