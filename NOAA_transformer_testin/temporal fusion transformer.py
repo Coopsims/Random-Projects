@@ -7,6 +7,49 @@ import keyring
 from isd import Batch
 from tqdm import tqdm
 
+
+def _split_numeric(raw, scale=1, miss=("9999", "99999", "+9999", "+99999")):
+    v = str(raw).split(",")[0].lstrip("+")
+    return pd.NA if v in miss else float(v) / scale
+
+
+def _parse_tmp(code):
+    return _split_numeric(code, 10)
+
+
+def _parse_dew(code):
+    return _split_numeric(code, 10)
+
+
+def _parse_slp(code):
+    return _split_numeric(code, 10)
+
+
+def _parse_vis(code):
+    return _split_numeric(code, 1)  # metres
+
+
+def _parse_cig(code):  # feet→m
+    h = _split_numeric(code, 1)
+    return pd.NA if pd.isna(h) else h * 0.3048
+
+
+def _parse_wnd(code):
+    if pd.isna(code): return pd.Series({"wind_dir_deg": pd.NA,
+                                        "wind_spd_ms": pd.NA})
+    d, _, _, s, _ = code.split(",")
+    dir_ = pd.NA if d.startswith("99") else float(d)
+    spd = _split_numeric(s, 10, miss=("9999",))
+    return pd.Series({"wind_dir_deg": dir_, "wind_spd_ms": spd})
+
+
+def _parse_ma1(code):
+    if pd.isna(code): return pd.Series({"altim_hpa": pd.NA,
+                                        "stn_p_hpa": pd.NA})
+    alt, _, stn, _ = code.split(",")
+    return pd.Series({"altim_hpa": _split_numeric(alt, 10),
+                      "stn_p_hpa": _split_numeric(stn, 10)})
+
 class NOAA:
     def __init__(self):
         self.STATE   = "CO"
@@ -20,8 +63,44 @@ class NOAA:
         self.KEEP_COLS = [
             "STATION", "NAME", "DATE",          # id / metadata
             "TMP", "DEW", "SLP", "WND", "VIS",
-            "CIG", "LATITUDE", "LONGITUDE", "ELEVATION", "DEW", "MA1"
+            "CIG", "LATITUDE", "LONGITUDE", "ELEVATION", "MA1"
         ]
+
+    ####################################################################
+    # 2)  rewrite _clean_df  (replace the whole old body)
+    ####################################################################
+    def _clean_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        # --------- decode coded groups into new numeric cols ----------
+        df["temp_c"] = df["TMP"].map(_parse_tmp)
+        df["dew_c"] = df["DEW"].map(_parse_dew)
+        df["slp_hpa"] = df["SLP"].map(_parse_slp)
+        df["vis_m"] = df["VIS"].map(_parse_vis)
+        df["ceil_m"] = df["CIG"].map(_parse_cig)
+
+        wnd_parsed = df["WND"].map(_parse_wnd)
+        df = pd.concat([df, wnd_parsed], axis=1)
+
+        ma1_parsed = df["MA1"].map(_parse_ma1)
+        df = pd.concat([df, ma1_parsed], axis=1)
+
+        # --------- replace global sentinels in numeric cols -----------
+        NUM_COLS = ["temp_c", "dew_c", "slp_hpa",
+                    "wind_dir_deg", "wind_spd_ms",
+                    "vis_m", "ceil_m",
+                    "altim_hpa", "stn_p_hpa",
+                    "LATITUDE", "LONGITUDE", "ELEVATION"]
+
+        df.replace({9999: pd.NA, 99999: pd.NA,
+                    -9999: pd.NA, "+9999": pd.NA, "+99999": pd.NA},
+                   inplace=True)
+
+        # safe cast & interpolate
+        for col in NUM_COLS:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
+        df[NUM_COLS] = df[NUM_COLS].interpolate(limit_direction="both")
+
+        return df
 
     def get_station_ids(self):
         self.stations_url = "https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv"
@@ -55,7 +134,6 @@ class NOAA:
             "units": "metric",
             "includeStationName": "true",
             "format": "csv",
-            # Only request the columns we need
             "dataTypes": ",".join(self.KEEP_COLS),
         }
         for _ in range(retries):
@@ -69,22 +147,19 @@ class NOAA:
         today = date.today()
 
         for sid, row in tqdm(self.co_stns.set_index("id").iterrows(), total=len(self.co_stns)):
-            first_day = max(self.START, row["begin"]).date()          # obey 2000-01-01 floor
+            first_day = max(self.START, row["begin"]).date()
             last_day  = today if pd.isna(row["end"]) else min(today, row["end"].date())
 
-            dfs = []                      # collect DataFrames, not CSV strings
+            dfs = []
             year = first_day.year
             while year <= last_day.year:
                 y_start = date(year, 1, 1) if year > first_day.year else first_day
                 y_end   = date(year, 12, 31) if year < last_day.year else last_day
                 try:
                     raw_csv = self.fetch_hourly(sid, y_start, y_end)
-                    # ------------------------------------------------------------------
-                    # Keep only "complete" rows: at least 10 non‑missing fields
-                    # ------------------------------------------------------------------
-                    # Read everything as string, keep memory low
+
                     df = pd.read_csv(io.StringIO(raw_csv), dtype=str, low_memory=False)
-                    df_filtered = df.dropna(thresh=10)          # tweak threshold if needed
+                    df_filtered = df.dropna(thresh=10)
                     df_filtered = df_filtered[self.KEEP_COLS]
                     if not df_filtered.empty:
                         dfs.append(df_filtered)
@@ -94,16 +169,13 @@ class NOAA:
                 time.sleep(0.2)        # be polite to NOAA
             if dfs:
                 full_df = pd.concat(dfs, ignore_index=True)
-                # -----------------------------------------------------------
-                #  Save the cleaned data
-                # -----------------------------------------------------------
+
+                full_df = self._clean_df(full_df)
+
+                print(full_df.describe())
+
                 full_df.to_csv(self.OUTDIR / f"{sid}.csv", index=False)
-                # -----------------------------------------------------------
-                #  Save per‑column null counts for quick diagnostics
-                # -----------------------------------------------------------
-                null_counts = full_df.isna().sum()
-                null_counts.to_csv(self.OUTDIR / f"{sid}_null_counts.csv",
-                                   header=["null_count"])
+
 
 if __name__ == "__main__":
     noaa = NOAA()
@@ -111,4 +183,3 @@ if __name__ == "__main__":
     noaa.co_stns = noaa.co_stns.iloc[[0]]
     print(noaa.co_stns)
     noaa.get_hourly()
-
