@@ -7,6 +7,7 @@ from sklearn.linear_model import LinearRegression
 import random
 import time
 from multiprocessing import Pool, cpu_count
+import torch
 
 # Define Colorado's approximate boundaries (longitude and latitude)
 CO_WEST = -109.05
@@ -95,6 +96,32 @@ def gaussian_variogram(h, sill=1.0, range_param=1.0, nugget=0.0):
     """Gaussian variogram model."""
     return nugget + sill * (1 - np.exp(-(h**2) / (range_param**2)))
 
+def process_variogram_bin(args):
+    """Worker function for parallel variogram calculation."""
+    distances, values, h_min, h_max, i = args
+
+    # Create mask for distances in the current bin
+    mask = (distances > h_min) & (distances <= h_max)
+
+    # Use upper triangular part of the distance matrix to avoid counting pairs twice
+    mask_triu = np.triu(mask, k=1)
+
+    # Get indices of points with distances in the current bin
+    indices = np.where(mask_triu)
+
+    # Calculate squared differences for these pairs
+    squared_diff = np.sum((values[indices[0]] - values[indices[1]])**2)
+
+    # Count the number of pairs
+    count = len(indices[0])
+
+    if count > 0:
+        gamma = squared_diff / (2 * count)
+    else:
+        gamma = 0
+
+    return i, gamma, count
+
 def calculate_variogram(points, values):
     """Calculate experimental variogram from data points."""
     n = len(points)
@@ -105,20 +132,213 @@ def calculate_variogram(points, values):
     gamma = np.zeros(len(h_bins)-1)
 
     for i in range(len(h_bins)-1):
+        # Create mask for distances in the current bin
         mask = (distances > h_bins[i]) & (distances <= h_bins[i+1])
-        if np.sum(mask) > 0:
-            squared_diff = 0
-            count = 0
-            for j in range(n):
-                for k in range(j+1, n):
-                    if h_bins[i] < distances[j, k] <= h_bins[i+1]:
-                        squared_diff += (values[j] - values[k])**2
-                        count += 1
+
+        # Use upper triangular part of the distance matrix to avoid counting pairs twice
+        mask_triu = np.triu(mask, k=1)
+
+        if np.any(mask_triu):
+            # Get indices of points with distances in the current bin
+            indices = np.where(mask_triu)
+
+            # Calculate squared differences for these pairs
+            squared_diff = np.sum((values[indices[0]] - values[indices[1]])**2)
+
+            # Count the number of pairs
+            count = len(indices[0])
+
             if count > 0:
                 gamma[i] = squared_diff / (2 * count)
 
     # Return bin centers and semivariance values
     bin_centers = (h_bins[:-1] + h_bins[1:]) / 2
+    return bin_centers, gamma
+
+def calculate_variogram_mp(points, values, n_jobs=None):
+    """Calculate experimental variogram from data points using multiprocessing."""
+    if n_jobs is None:
+        n_jobs = cpu_count()
+
+    n = len(points)
+    distances = cdist(points, points)
+
+    # Calculate semivariance
+    h_bins = np.linspace(0, np.max(distances), 10)
+    gamma = np.zeros(len(h_bins)-1)
+
+    # Prepare arguments for worker function
+    args_list = [
+        (distances, values, h_bins[i], h_bins[i+1], i)
+        for i in range(len(h_bins)-1)
+    ]
+
+    # Process bins in parallel
+    with Pool(processes=n_jobs) as pool:
+        results = pool.map(process_variogram_bin, args_list)
+
+    # Collect results
+    for i, gamma_value, count in results:
+        if count > 0:
+            gamma[i] = gamma_value
+
+    # Return bin centers and semivariance values
+    bin_centers = (h_bins[:-1] + h_bins[1:]) / 2
+    return bin_centers, gamma
+
+def calculate_variogram_gpu(points, values, device=None, batch_size=1000, max_points=10000, seed=42):
+    """Calculate experimental variogram from data points using GPU acceleration.
+
+    This function uses memory-efficient techniques to handle large datasets:
+    1. Batch processing to reduce peak memory usage
+    2. Optional sampling to limit the number of points used
+    3. Explicit memory cleanup to free GPU memory
+    4. Efficient tensor operations to minimize memory footprint
+
+    Memory Usage Guidelines:
+    - For datasets with >10,000 points, use max_points to limit the sample size
+    - Adjust batch_size based on available GPU memory (smaller batches use less memory)
+    - For a GPU with 16GB memory, recommended settings are:
+      * max_points=10000, batch_size=1000 for datasets with >100,000 points
+      * max_points=20000, batch_size=2000 for datasets with 50,000-100,000 points
+      * max_points=None, batch_size=5000 for datasets with <50,000 points
+
+    Args:
+        points: Array of shape (n, 2) with coordinates of data points
+        values: Array of shape (n,) with values at data points
+        device: PyTorch device to use (if None, use CUDA if available, otherwise CPU)
+        batch_size: Size of batches for processing large datasets
+        max_points: Maximum number of points to use (if None, use all points)
+        seed: Random seed for sampling points
+
+    Returns:
+        bin_centers: Array of bin centers
+        gamma: Array of semivariance values
+    """
+    import gc
+    import numpy as np
+
+    # Set device
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Using device: {device}")
+
+    # Sample points if there are too many
+    n_original = len(points)
+    if max_points is not None and n_original > max_points:
+        print(f"Sampling {max_points} points from {n_original} total points")
+        np.random.seed(seed)
+        indices = np.random.choice(n_original, max_points, replace=False)
+        points = points[indices]
+        values = values[indices]
+
+    n = len(points)
+    print(f"Processing {n} points for variogram calculation")
+
+    # Convert inputs to NumPy arrays if they're not already
+    if not isinstance(points, np.ndarray):
+        points = np.array(points)
+    if not isinstance(values, np.ndarray):
+        values = np.array(values)
+
+    # Estimate max distance for bin creation (using a small sample)
+    sample_size = min(1000, n)
+    sample_indices = np.random.choice(n, sample_size, replace=False)
+    sample_points = points[sample_indices]
+
+    # Calculate approximate max distance
+    x_range = np.max(sample_points[:, 0]) - np.min(sample_points[:, 0])
+    y_range = np.max(sample_points[:, 1]) - np.min(sample_points[:, 1])
+    approx_max_dist = np.sqrt(x_range**2 + y_range**2)
+
+    # Create bins based on the approximate max distance
+    h_bins = torch.linspace(0, approx_max_dist, 10, device=device)
+    gamma = torch.zeros(len(h_bins)-1, device=device)
+    counts = torch.zeros(len(h_bins)-1, device=device)
+
+    # Process data in batches
+    for i in range(0, n, batch_size):
+        # Clear GPU cache
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+
+        # Get current batch
+        end_idx = min(i + batch_size, n)
+        batch_points = points[i:end_idx]
+        batch_values = values[i:end_idx]
+
+        # Convert batch to tensors
+        batch_points_tensor = torch.tensor(batch_points, dtype=torch.float32, device=device)
+        batch_values_tensor = torch.tensor(batch_values, dtype=torch.float32, device=device)
+
+        # Process each point in the batch against all other points
+        for j in range(i, n, batch_size):
+            # Get comparison batch
+            end_j = min(j + batch_size, n)
+            comp_points = points[j:end_j]
+            comp_values = values[j:end_j]
+
+            # Convert comparison batch to tensors
+            comp_points_tensor = torch.tensor(comp_points, dtype=torch.float32, device=device)
+            comp_values_tensor = torch.tensor(comp_values, dtype=torch.float32, device=device)
+
+            # Calculate distances between current batch and comparison batch
+            distances = torch.cdist(batch_points_tensor, comp_points_tensor)
+
+            # Process each bin
+            for k in range(len(h_bins)-1):
+                # Create mask for distances in the current bin
+                mask = (distances > h_bins[k]) & (distances <= h_bins[k+1])
+
+                # If processing the same batch, use upper triangular part to avoid counting pairs twice
+                if i == j:
+                    # Create indices for upper triangular part
+                    rows, cols = torch.triu_indices(distances.shape[0], distances.shape[1], offset=1, device=device)
+                    # Apply the mask to these indices
+                    valid_indices = mask[rows, cols]
+                    if valid_indices.sum() > 0:
+                        # Get the actual indices
+                        valid_rows = rows[valid_indices]
+                        valid_cols = cols[valid_indices]
+
+                        # Calculate squared differences
+                        squared_diff = (batch_values_tensor[valid_rows] - comp_values_tensor[valid_cols]).pow(2)
+                        gamma[k] += squared_diff.sum()
+                        counts[k] += len(squared_diff)
+                else:
+                    # For different batches, use all pairs
+                    if mask.sum() > 0:
+                        # Get indices where mask is True
+                        indices = mask.nonzero(as_tuple=True)
+
+                        # Calculate squared differences
+                        squared_diff = (batch_values_tensor[indices[0]] - comp_values_tensor[indices[1]]).pow(2)
+                        gamma[k] += squared_diff.sum()
+                        counts[k] += len(squared_diff)
+
+            # Free memory
+            del comp_points_tensor, comp_values_tensor, distances
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+
+        # Free memory
+        del batch_points_tensor, batch_values_tensor
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+
+    # Calculate final gamma values
+    valid_bins = counts > 0
+    gamma[valid_bins] = gamma[valid_bins] / (2 * counts[valid_bins])
+
+    # Move results back to CPU and convert to NumPy arrays
+    bin_centers = ((h_bins[:-1] + h_bins[1:]) / 2).cpu().numpy()
+    gamma = gamma.cpu().numpy()
+
+    # Force garbage collection
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+    gc.collect()
+
     return bin_centers, gamma
 
 def fit_variogram_model(bin_centers, gamma):
@@ -138,34 +358,40 @@ def process_grid_point(args):
     # Calculate distances from grid point to all data points
     distances = np.sqrt(np.sum((points - grid_point)**2, axis=1))
 
-    # Build kriging matrix
-    K = np.zeros((n+1, n+1))
-    for j in range(n):
-        for k in range(n):
-            h = np.sqrt(np.sum((points[j] - points[k])**2))
-            K[j, k] = exponential_variogram(h, 
-                                          variogram_params["sill"], 
-                                          variogram_params["range"], 
-                                          variogram_params["nugget"])
+    # Build kriging matrix using vectorized operations
+    # Calculate pairwise distances between all data points
+    point_dists = cdist(points, points)
 
-    # Add lagrange multiplier constraints
-    K[:n, n] = 1.0
-    K[n, :n] = 1.0
-    K[n, n] = 0.0
+    # Apply variogram model to all distances at once
+    K = exponential_variogram(
+        point_dists, 
+        variogram_params["sill"], 
+        variogram_params["range"], 
+        variogram_params["nugget"]
+    )
+
+    # Create full kriging matrix with Lagrange multiplier constraints
+    K_full = np.zeros((n+1, n+1))
+    K_full[:n, :n] = K
+    K_full[:n, n] = 1.0
+    K_full[n, :n] = 1.0
+    K_full[n, n] = 0.0
 
     # Right-hand side: distances from prediction point to all data points
     k = np.zeros(n+1)
-    for j in range(n):
-        h = distances[j]
-        k[j] = exponential_variogram(h, 
-                                   variogram_params["sill"], 
-                                   variogram_params["range"], 
-                                   variogram_params["nugget"])
+
+    # Apply variogram model to all distances at once
+    k[:n] = exponential_variogram(
+        distances, 
+        variogram_params["sill"], 
+        variogram_params["range"], 
+        variogram_params["nugget"]
+    )
     k[n] = 1.0
 
     # Solve the kriging system
     try:
-        weights = np.linalg.solve(K, k)
+        weights = np.linalg.solve(K_full, k)
         # Calculate prediction
         prediction = np.sum(weights[:n] * values)
     except np.linalg.LinAlgError:
@@ -228,17 +454,21 @@ def process_universal_kriging_point(args):
     # Calculate distances from grid point to all data points
     distances = np.sqrt(np.sum((points - grid_point)**2, axis=1))
 
-    # Build kriging matrix
-    K = np.zeros((n+p, n+p))
+    # Build kriging matrix using vectorized operations
+    # Calculate pairwise distances between all data points
+    point_dists = cdist(points, points)
 
-    # Fill the variogram part of the matrix
-    for j in range(n):
-        for k in range(n):
-            h = np.sqrt(np.sum((points[j] - points[k])**2))
-            K[j, k] = exponential_variogram(h, 
-                                          variogram_params["sill"], 
-                                          variogram_params["range"], 
-                                          variogram_params["nugget"])
+    # Apply variogram model to all distances at once
+    K_var = exponential_variogram(
+        point_dists, 
+        variogram_params["sill"], 
+        variogram_params["range"], 
+        variogram_params["nugget"]
+    )
+
+    # Create full kriging matrix with trend components
+    K = np.zeros((n+p, n+p))
+    K[:n, :n] = K_var
 
     # Add trend components
     K[:n, n:] = F
@@ -246,12 +476,14 @@ def process_universal_kriging_point(args):
 
     # Right-hand side: distances from prediction point to all data points
     k = np.zeros(n+p)
-    for j in range(n):
-        h = distances[j]
-        k[j] = exponential_variogram(h, 
-                                   variogram_params["sill"], 
-                                   variogram_params["range"], 
-                                   variogram_params["nugget"])
+
+    # Apply variogram model to all distances at once
+    k[:n] = exponential_variogram(
+        distances, 
+        variogram_params["sill"], 
+        variogram_params["range"], 
+        variogram_params["nugget"]
+    )
 
     # Build trend matrix for prediction point
     if trend_degree == 1:
@@ -441,9 +673,17 @@ def inverse_distance_weighting(points, values, grid_points, power=2):
     predictions = np.zeros(len(grid_points))
 
     # For grid points that match data points exactly, use the data value
-    for i in np.where(row_has_zero)[0]:
-        data_idx = np.where(zero_dist_mask[i])[0][0]
-        predictions[i] = values[data_idx]
+    # Vectorized approach to handle zero distances
+    if np.any(row_has_zero):
+        # Find the first data point that matches each grid point
+        # For each row with a zero, get the index of the first zero
+        first_zero_indices = np.argmax(zero_dist_mask[row_has_zero], axis=1)
+
+        # Get the corresponding values
+        exact_match_values = values[first_zero_indices]
+
+        # Assign these values to the predictions
+        predictions[row_has_zero] = exact_match_values
 
     # For other grid points, use IDW
     non_zero_dist_mask = ~row_has_zero
@@ -495,8 +735,8 @@ def run_kriging_comparison(n_points=100, grid_size=50, n_jobs=None, methods=None
     grid_points = np.column_stack((grid_lon.flatten(), grid_lat.flatten()))
 
     # Calculate experimental variogram
-    print("Calculating experimental variogram...")
-    bin_centers, gamma = calculate_variogram(points, temperatures)
+    print("Calculating experimental variogram using GPU...")
+    bin_centers, gamma = calculate_variogram_gpu(points, temperatures)
 
     # Fit variogram model
     print("Fitting variogram model...")

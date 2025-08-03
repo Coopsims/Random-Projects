@@ -153,8 +153,8 @@ def main():
     print("=== Julia Set Performance Comparison ===")
     print("Comparing the performance of different Julia set implementations.")
     print("Parameters:")
-    width = 7000
-    height = 7000
+    width = 3000
+    height = 3000
     max_iterations = 300
     c = -0.7 + 0.27j
     print(f"  - Width: {width}")
