@@ -155,7 +155,7 @@ def main():
     print("Parameters:")
     width = 3000
     height = 3000
-    max_iterations = 300
+    max_iterations = 200
     c = -0.7 + 0.27j
     print(f"  - Width: {width}")
     print(f"  - Height: {height}")
