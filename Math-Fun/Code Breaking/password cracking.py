@@ -275,6 +275,27 @@ def try_passwords_hash(password_iter, length, target_hash, hash_type):
             return found_password
     return None
 
+
+def try_passwords_hash_range(start_idx, end_idx, length, charset, target_hash, hash_type):
+    """Worker for a numeric range [start_idx, end_idx) generating passwords internally.
+    This avoids passing a generator to child processes (which is not picklable)."""
+    base = len(charset)
+    for current in range(start_idx, end_idx):
+        # Convert index to password string
+        indices = []
+        temp = current
+        for _ in range(length):
+            indices.append(temp % base)
+            temp //= base
+        indices.reverse()
+        while len(indices) < length:
+            indices.insert(0, 0)
+        password = ''.join(charset[i] for i in indices)
+        match, found_password = check_hash_match(password, target_hash, hash_type)
+        if match:
+            return found_password
+    return None
+
 def password_generator(start, end, length, charset):
     """
     Generate password combinations in a specific range.
@@ -349,9 +370,11 @@ def brute_force_attack_cpu(target_hash, hash_type, charset, max_length, num_proc
                 end_idx = (i + 1) * chunk_size if i < num_processes - 1 else total_combinations
 
                 futures.append(executor.submit(
-                    try_passwords_hash, 
-                    password_generator(start_idx, end_idx, length, charset),
+                    try_passwords_hash_range,
+                    start_idx,
+                    end_idx,
                     length,
+                    charset,
                     target_hash,
                     hash_type
                 ))
@@ -466,6 +489,25 @@ def try_passwords_encrypted(password_iter, length, target_encrypted, key_b64, iv
     """
     for candidate in password_iter:
         password = ''.join(candidate)
+        match, found_password = check_encryption_match(password, target_encrypted, key_b64, iv_b64, encryption_type)
+        if match:
+            return found_password
+    return None
+
+
+def try_passwords_encrypted_range(start_idx, end_idx, length, charset, target_encrypted, key_b64, iv_b64, encryption_type):
+    """Worker for a numeric range [start_idx, end_idx) generating passwords internally for encrypted match."""
+    base = len(charset)
+    for current in range(start_idx, end_idx):
+        indices = []
+        temp = current
+        for _ in range(length):
+            indices.append(temp % base)
+            temp //= base
+        indices.reverse()
+        while len(indices) < length:
+            indices.insert(0, 0)
+        password = ''.join(charset[i] for i in indices)
         match, found_password = check_encryption_match(password, target_encrypted, key_b64, iv_b64, encryption_type)
         if match:
             return found_password
